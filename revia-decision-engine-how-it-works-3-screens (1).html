@@ -1,0 +1,583 @@
+
+<html lang="id">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width,initial-scale=1.0" />
+<title>REVIA — Decision Engine: How It Works</title>
+<style>
+  *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+  :root {
+    --primary:    #1B4332;
+    --primary-md: #2D6A4F;
+    --secondary:  #40916C;
+    --accent:     #D9A441;
+    --accent-lt:  #F5E6C0;
+    --bg:         #F4F1EA;
+    --surface:    #FFFFFF;
+    --surface2:   #EEF0EB;
+    --border:     #D8DDD5;
+    --text:       #1B1B1B;
+    --muted:      #6B7280;
+    --success:    #52B788;
+    --success-lt: #D8F0E5;
+    --alert:      #E07A5F;
+    --alert-lt:   #FAE5DF;
+    --r16: 16px;
+    --r20: 20px;
+    --shadow-sm: 0 2px 8px rgba(27,67,50,0.08);
+    --shadow-md: 0 4px 20px rgba(27,67,50,0.13);
+    --shadow-lg: 0 8px 36px rgba(27,67,50,0.18);
+    --font: -apple-system,"Segoe UI","Inter",system-ui,sans-serif;
+  }
+  body {
+    background: #2D4A3A;
+    font-family: var(--font);
+    display: flex;
+    flex-wrap: wrap;
+    gap: 32px;
+    padding: 48px 32px 72px;
+    align-items: flex-start;
+    justify-content: center;
+    min-height: 100vh;
+  }
+  .phone-wrap { display: flex; flex-direction: column; align-items: center; }
+  .screen-label {
+    font-size: 10px; font-weight: 700; letter-spacing: 0.14em;
+    text-transform: uppercase; color: rgba(244,241,234,0.45);
+    margin-bottom: 10px; text-align: center;
+  }
+  .phone {
+    width: 375px; height: 812px;
+    background: var(--bg);
+    border-radius: 46px;
+    box-shadow: var(--shadow-lg), inset 0 0 0 1px rgba(255,255,255,0.45);
+    overflow: hidden;
+    display: flex; flex-direction: column;
+    position: relative;
+  }
+  .phone::before {
+    content: '';
+    position: absolute; top: 0; left: 50%; transform: translateX(-50%);
+    width: 126px; height: 30px;
+    background: #111;
+    border-radius: 0 0 20px 20px;
+    z-index: 50;
+  }
+  .status {
+    display: flex; justify-content: space-between; align-items: center;
+    padding: 16px 28px 6px;
+    font-size: 11px; font-weight: 700; color: var(--text);
+    flex-shrink: 0; position: relative; z-index: 5;
+  }
+  .status.on-dark { color: rgba(255,255,255,0.88); }
+  .body { flex: 1; overflow-y: auto; scrollbar-width: none; display: flex; flex-direction: column; }
+  .body::-webkit-scrollbar { display: none; }
+  .nav { background: var(--surface); border-top: 1px solid var(--border); display: flex; padding: 10px 0 22px; flex-shrink: 0; }
+  .ni { flex: 1; display: flex; flex-direction: column; align-items: center; gap: 3px; cursor: pointer; }
+  .ni-icon  { font-size: 19px; line-height: 1; }
+  .ni-lbl   { font-size: 9px; font-weight: 700; color: var(--muted); text-transform: uppercase; letter-spacing: 0.04em; }
+  .ni.active .ni-lbl { color: var(--secondary); }
+  .ni-dot   { width: 4px; height: 4px; border-radius: 50%; background: var(--secondary); }
+  .topbar { background: var(--surface); padding: 14px 20px 12px; display: flex; align-items: center; justify-content: space-between; border-bottom: 1px solid var(--border); flex-shrink: 0; }
+  .topbar-back   { font-size: 14px; color: var(--muted); font-weight: 600; }
+  .topbar-title  { font-size: 16px; font-weight: 800; color: var(--text); }
+  .topbar-action { font-size: 12px; font-weight: 700; color: var(--secondary); }
+  .sec-hdr { display: flex; align-items: center; justify-content: space-between; padding: 14px 20px 8px; flex-shrink: 0; }
+  .sec-title { font-size: 11px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.07em; color: var(--muted); }
+  .gap    { height: 12px; flex-shrink: 0; }
+  .gap-lg { height: 20px; flex-shrink: 0; }
+  .chip       { display: inline-block; padding: 3px 10px; border-radius: 20px; font-size: 10px; font-weight: 700; letter-spacing: 0.03em; }
+  .chip-green { background: var(--success-lt); color: var(--primary); }
+  .chip-gold  { background: var(--accent-lt);  color: #7A5000; }
+  .chip-muted { background: var(--surface2);   color: var(--muted); }
+
+  @keyframes arrowBounce { 0%,100%{transform:translateX(0)} 50%{transform:translateX(5px)} }
+  @keyframes stageIn { 0%{opacity:0;transform:translateY(6px)} 100%{opacity:1;transform:translateY(0)} }
+  @keyframes cardFadeUp { 0%{opacity:0;transform:translateY(8px)} 100%{opacity:1;transform:translateY(0)} }
+  @keyframes pulse { 0%,100%{opacity:1;transform:scale(1)} 50%{opacity:.55;transform:scale(.82)} }
+
+  /* SCREEN A */
+  .cover-hero {
+    background: linear-gradient(155deg, var(--primary) 0%, var(--primary-md) 55%, #2D6A4F 100%);
+    padding: 18px 22px 24px; flex-shrink: 0; position: relative; overflow: hidden;
+  }
+  .cover-eyebrow { font-size: 10px; font-weight: 700; letter-spacing: 0.14em; text-transform: uppercase; color: rgba(255,255,255,0.55); margin-bottom: 6px; }
+  .cover-title   { font-size: 22px; font-weight: 900; color: #fff; line-height: 1.2; margin-bottom: 4px; }
+  .cover-title span { color: var(--accent); }
+  .cover-sub     { font-size: 12px; color: rgba(255,255,255,0.65); line-height: 1.55; margin-bottom: 14px; }
+  .cover-badges  { display: flex; gap: 8px; flex-wrap: wrap; }
+  .cover-badge   { padding: 4px 12px; border-radius: 20px; font-size: 10px; font-weight: 700; background: rgba(255,255,255,0.14); color: rgba(255,255,255,0.88); border: 1px solid rgba(255,255,255,0.22); }
+  .logo-row { display: flex; align-items: center; gap: 10px; margin-bottom: 16px; }
+  .logo-wordmark { font-size: 24px; font-weight: 900; color: #fff; letter-spacing: -0.5px; line-height: 1; }
+  .logo-tagline  { font-size: 10px; color: rgba(255,255,255,0.55); font-style: italic; }
+  .flow-section  { margin: 0 20px 14px; background: var(--surface); border: 1.5px solid var(--border); border-radius: var(--r20); overflow: hidden; box-shadow: var(--shadow-sm); flex-shrink: 0; }
+  .flow-header   { background: var(--surface2); border-bottom: 1px solid var(--border); padding: 10px 16px; display: flex; align-items: center; justify-content: space-between; }
+  .flow-header-title { font-size: 11px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.08em; color: var(--muted); }
+  .flow-header-badge { font-size: 10px; font-weight: 700; color: var(--secondary); background: var(--success-lt); padding: 2px 10px; border-radius: 20px; }
+  .stage-grid { display: flex; flex-direction: column; padding: 12px 14px; }
+  .stage-row  { display: flex; align-items: center; gap: 10px; padding: 8px 0; border-bottom: 1px solid var(--border); animation: stageIn 0.4s ease-out both; }
+  .stage-row:last-child { border-bottom: none; }
+  .stage-row:nth-child(1){animation-delay:0.05s}.stage-row:nth-child(2){animation-delay:0.10s}.stage-row:nth-child(3){animation-delay:0.15s}.stage-row:nth-child(4){animation-delay:0.20s}.stage-row:nth-child(5){animation-delay:0.25s}.stage-row:nth-child(6){animation-delay:0.30s}.stage-row:nth-child(7){animation-delay:0.35s}
+  .stage-num  { width: 26px; height: 26px; border-radius: 8px; display: flex; align-items: center; justify-content: center; font-size: 11px; font-weight: 900; flex-shrink: 0; color: #fff; }
+  .sn-1{background:var(--primary)}.sn-2{background:#2D6A4F}.sn-3{background:var(--secondary)}.sn-4{background:#3A7D5E}.sn-5{background:var(--accent);color:#4A3000}.sn-6{background:#7A5000}.sn-7{background:var(--success)}
+  .stage-icon-wrap { width: 36px; height: 36px; border-radius: 10px; display: flex; align-items: center; justify-content: center; font-size: 18px; flex-shrink: 0; }
+  .si-1{background:var(--success-lt)}.si-2{background:#D8F0E5}.si-3{background:#E3EAF8}.si-4{background:#EEF0EB}.si-5{background:var(--accent-lt)}.si-6{background:var(--alert-lt)}.si-7{background:var(--success-lt)}
+  .stage-info { flex: 1; }
+  .stage-name { font-size: 13px; font-weight: 700; color: var(--text); }
+  .stage-desc { font-size: 10.5px; color: var(--muted); margin-top: 1px; line-height: 1.4; }
+  .stage-arrow { font-size: 13px; color: var(--secondary); flex-shrink: 0; animation: arrowBounce 2s ease-in-out infinite; }
+  .stage-row:last-child .stage-arrow { visibility: hidden; }
+  .mini-stats { display: flex; padding: 14px 20px 4px; gap: 10px; flex-shrink: 0; }
+  .mstat { flex: 1; background: var(--surface); border: 1px solid var(--border); border-radius: var(--r16); padding: 12px 10px; text-align: center; box-shadow: var(--shadow-sm); }
+  .mstat-val   { font-size: 17px; font-weight: 900; color: var(--primary); line-height: 1; }
+  .mstat-label { font-size: 9px; font-weight: 700; color: var(--muted); text-transform: uppercase; letter-spacing: 0.04em; margin-top: 3px; }
+
+  /* SCREEN B */
+  .supply-hero { background: linear-gradient(140deg, var(--primary) 0%, var(--primary-md) 100%); padding: 16px 20px 22px; flex-shrink: 0; }
+  .sh-eyebrow { font-size: 10px; font-weight: 700; letter-spacing: 0.12em; text-transform: uppercase; color: rgba(255,255,255,0.55); margin-bottom: 5px; }
+  .sh-title   { font-size: 20px; font-weight: 900; color: #fff; line-height: 1.2; }
+  .sh-sub     { font-size: 12px; color: rgba(255,255,255,0.65); margin-top: 4px; line-height: 1.55; }
+  .sh-pill-row { display: flex; gap: 8px; margin-top: 12px; flex-wrap: wrap; }
+  .sh-pill    { padding: 4px 12px; border-radius: 20px; font-size: 10px; font-weight: 700; background: rgba(255,255,255,0.15); color: rgba(255,255,255,0.9); border: 1px solid rgba(255,255,255,0.22); }
+  .sh-pill.accent { background: rgba(217,164,65,0.28); border-color: rgba(217,164,65,0.5); color: #F5E6C0; }
+  .supply-stats { background: var(--primary); display: flex; flex-shrink: 0; }
+  .supstat-item { flex: 1; text-align: center; padding: 10px 6px 12px; border-right: 1px solid rgba(255,255,255,0.1); }
+  .supstat-item:last-child { border-right: none; }
+  .supstat-val   { font-size: 15px; font-weight: 900; color: #fff; line-height: 1; }
+  .supstat-label { font-size: 9px; font-weight: 600; color: rgba(255,255,255,0.55); margin-top: 2px; text-transform: uppercase; letter-spacing: 0.03em; }
+  .owner-grid { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 10px; padding: 14px 20px; flex-shrink: 0; }
+  .owner-card { background: var(--surface); border: 2px solid var(--border); border-radius: var(--r20); padding: 16px 8px 12px; text-align: center; box-shadow: var(--shadow-sm); animation: cardFadeUp 0.4s ease-out both; cursor: pointer; position: relative; overflow: hidden; }
+  .owner-card:nth-child(1){animation-delay:0.05s}.owner-card:nth-child(2){animation-delay:0.10s}.owner-card:nth-child(3){animation-delay:0.15s}.owner-card:nth-child(4){animation-delay:0.20s}.owner-card:nth-child(5){animation-delay:0.25s}.owner-card:nth-child(6){animation-delay:0.30s}
+  .owner-card.featured { border-color: var(--secondary); background: #F0F9F4; }
+  .owner-card.featured::after { content:''; position:absolute; top:0; left:0; right:0; height:3px; background:var(--secondary); border-radius:20px 20px 0 0; }
+  .oc-icon-wrap { width: 52px; height: 52px; border-radius: 16px; margin: 0 auto 8px; display: flex; align-items: center; justify-content: center; font-size: 26px; }
+  .oci-household{background:#D8F0E5}.oci-umkm{background:#DCEAF8}.oci-pasar{background:var(--accent-lt)}.oci-resto{background:var(--alert-lt)}.oci-sekolah{background:#EDE8F5}.oci-petani{background:#E6F0DC}
+  .oc-name  { font-size: 11px; font-weight: 800; color: var(--text); line-height: 1.3; }
+  .owner-card.featured .oc-name { color: var(--primary); }
+  .oc-count { font-size: 10px; font-weight: 700; color: var(--muted); margin-top: 3px; }
+  .owner-card.featured .oc-count { color: var(--secondary); }
+  .oc-badge { margin: 6px auto 0; display: inline-block; padding: 2px 8px; border-radius: 20px; font-size: 9px; font-weight: 700; background: var(--success-lt); color: var(--primary); }
+  .owner-card.featured .oc-badge { background: var(--secondary); color: #fff; }
+  .flow-connector { margin: 4px 20px 14px; background: var(--surface); border: 1px solid var(--border); border-radius: var(--r16); padding: 12px 14px; flex-shrink: 0; box-shadow: var(--shadow-sm); }
+  .fc-label { font-size: 10px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.08em; color: var(--muted); margin-bottom: 10px; }
+  .fc-chain { display: flex; align-items: center; gap: 4px; }
+  .fcc-node { display: flex; flex-direction: column; align-items: center; gap: 3px; flex: 1; }
+  .fcc-icon-wrap { width: 36px; height: 36px; border-radius: 12px; display: flex; align-items: center; justify-content: center; font-size: 18px; }
+  .fcc-name { font-size: 9px; font-weight: 700; color: var(--muted); text-align: center; }
+  .fcc-arrow { font-size: 14px; color: var(--accent); flex-shrink: 0; animation: arrowBounce 1.8s ease-in-out infinite; }
+  .btn-primary-full   { display: block; margin: 4px 20px 12px; width: calc(100% - 40px); background: var(--secondary); color: #fff; text-align: center; padding: 15px; border-radius: var(--r16); font-size: 15px; font-weight: 800; box-shadow: 0 4px 14px rgba(64,145,108,0.35); flex-shrink: 0; }
+  .btn-secondary-full { display: block; margin: 0 20px 16px; width: calc(100% - 40px); background: var(--surface); color: var(--text); text-align: center; padding: 13px; border-radius: var(--r16); font-size: 13px; font-weight: 700; border: 1.5px solid var(--border); flex-shrink: 0; }
+
+  /* SCREEN C */
+  .reg-hero { background: linear-gradient(135deg, var(--primary) 0%, var(--secondary) 100%); padding: 16px 20px 22px; flex-shrink: 0; }
+  .rh-eyebrow { font-size: 10px; font-weight: 700; letter-spacing: 0.12em; text-transform: uppercase; color: rgba(255,255,255,0.55); margin-bottom: 5px; }
+  .rh-title   { font-size: 20px; font-weight: 900; color: #fff; line-height: 1.2; }
+  .rh-sub     { font-size: 12px; color: rgba(255,255,255,0.65); margin-top: 3px; }
+  .rh-steps   { display: flex; align-items: center; gap: 0; margin-top: 14px; }
+  .rhs-item   { display: flex; flex-direction: column; align-items: center; gap: 3px; flex: 1; }
+  .rhs-circle { width: 22px; height: 22px; border-radius: 50%; display: flex; align-items: center; justify-content: center; font-size: 10px; font-weight: 900; }
+  .rhs-circle.done   { background: var(--success); color: #fff; }
+  .rhs-circle.active { background: var(--accent); color: #4A3000; animation: pulse 2s ease-in-out infinite; }
+  .rhs-circle.todo   { background: rgba(255,255,255,0.25); color: rgba(255,255,255,0.6); }
+  .rhs-label  { font-size: 8.5px; font-weight: 700; color: rgba(255,255,255,0.7); text-align: center; line-height: 1.3; }
+  .rhs-label.active { color: #fff; }
+  .rhs-divider { flex: 1; height: 2px; background: rgba(255,255,255,0.25); margin-bottom: 16px; max-width: 22px; }
+  .rhs-divider.done { background: var(--success); }
+  .photo-card { margin: 14px 20px 0; background: var(--surface); border: 1.5px solid var(--border); border-radius: var(--r20); overflow: hidden; box-shadow: var(--shadow-sm); flex-shrink: 0; }
+  .photo-preview { height: 148px; background: linear-gradient(135deg, #2D6A4F 0%, #52B788 100%); display: flex; align-items: center; justify-content: center; flex-direction: column; gap: 6px; position: relative; }
+  .photo-verified-badge { position: absolute; top: 10px; right: 10px; background: var(--success); color: #fff; padding: 4px 10px; border-radius: 20px; font-size: 10px; font-weight: 700; display: flex; align-items: center; gap: 4px; }
+  .photo-id-badge { position: absolute; bottom: 10px; left: 10px; background: rgba(0,0,0,0.45); color: rgba(255,255,255,0.9); padding: 3px 10px; border-radius: 20px; font-size: 9px; font-weight: 700; letter-spacing: 0.06em; }
+  .photo-card-body { padding: 14px 16px; }
+  .pcb-resource-name { font-size: 17px; font-weight: 900; color: var(--text); }
+  .pcb-owner-row { display: flex; align-items: center; gap: 6px; margin-top: 4px; }
+  .pcb-avatar { width: 20px; height: 20px; border-radius: 6px; background: var(--success-lt); display: flex; align-items: center; justify-content: center; font-size: 10px; flex-shrink: 0; }
+  .pcb-owner-name { font-size: 12px; color: var(--muted); font-weight: 600; }
+  .pcb-verified   { font-size: 10px; font-weight: 700; color: var(--secondary); }
+  .data-card { margin: 12px 20px 0; background: var(--surface); border: 1px solid var(--border); border-radius: var(--r16); overflow: hidden; box-shadow: var(--shadow-sm); flex-shrink: 0; }
+  .data-card-header { background: var(--surface2); border-bottom: 1px solid var(--border); padding: 9px 14px; font-size: 10px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.08em; color: var(--muted); display: flex; align-items: center; justify-content: space-between; }
+  .data-row { display: flex; align-items: center; gap: 12px; padding: 11px 14px; border-bottom: 1px solid var(--border); }
+  .data-row:last-child { border-bottom: none; }
+  .dr-icon-wrap { width: 32px; height: 32px; border-radius: 10px; display: flex; align-items: center; justify-content: center; font-size: 15px; flex-shrink: 0; }
+  .dri-type{background:var(--success-lt)}.dri-weight{background:#E3EAF8}.dri-loc{background:var(--accent-lt)}.dri-cond{background:#EDE8F5}.dri-time{background:#EEF0EB}
+  .dr-body  { flex: 1; }
+  .dr-label { font-size: 10.5px; color: var(--muted); font-weight: 600; }
+  .dr-value { font-size: 13px; font-weight: 800; color: var(--text); margin-top: 1px; }
+  .dr-value.green { color: var(--secondary); }
+  .dr-value.gold  { color: #7A5000; }
+  .dr-suffix { font-size: 10px; color: var(--muted); font-weight: 600; flex-shrink: 0; }
+  .gps-row-visual { display: flex; gap: 8px; padding: 10px 14px; border-bottom: 1px solid var(--border); align-items: center; }
+  .gps-map-thumb  { width: 56px; height: 40px; border-radius: 8px; background: #D4E8D8; border: 1px solid var(--border); flex-shrink: 0; display: flex; align-items: center; justify-content: center; overflow: hidden; position: relative; }
+  .gps-coords     { flex: 1; }
+  .gps-coord-line { font-size: 11px; font-weight: 700; color: var(--text); }
+  .gps-coord-acc  { font-size: 10px; color: var(--secondary); font-weight: 700; margin-top: 2px; }
+  .gps-copy-btn   { padding: 6px 12px; background: var(--surface2); border: 1px solid var(--border); border-radius: 10px; font-size: 10px; font-weight: 700; color: var(--muted); flex-shrink: 0; }
+  .cond-chips { display: flex; gap: 6px; flex-wrap: wrap; padding: 10px 14px; }
+  .cond-chip  { padding: 5px 12px; border-radius: 20px; font-size: 11px; font-weight: 700; border: 1.5px solid var(--border); background: var(--surface); color: var(--muted); }
+  .cond-chip.active { background: var(--secondary); border-color: var(--secondary); color: #fff; }
+  .cond-chip.green  { background: var(--success-lt); border-color: var(--success); color: var(--primary); }
+  .submit-banner { margin: 12px 20px; background: var(--success-lt); border: 1.5px solid var(--success); border-radius: var(--r16); padding: 12px 14px; display: flex; align-items: center; gap: 10px; flex-shrink: 0; }
+  .sb-icon  { font-size: 24px; flex-shrink: 0; }
+  .sb-title { font-size: 13px; font-weight: 800; color: var(--primary); }
+  .sb-desc  { font-size: 11px; color: var(--secondary); margin-top: 2px; line-height: 1.45; }
+
+  footer { width: 100%; text-align: center; padding: 28px 0 12px; font-size: 11px; color: rgba(244,241,234,0.35); font-family: var(--font); border-top: 1px solid rgba(244,241,234,0.12); margin-top: 24px; }
+</style>
+</head>
+<body>
+
+
+<div class="phone-wrap">
+  <div class="screen-label">DE–01 — Decision Engine: Cover &amp; Overview</div>
+  <div class="phone">
+    <div class="status on-dark" style="padding-top:18px">
+      <span>9:41</span>
+      <span style="font-size:10px;color:rgba(255,255,255,0.75)">▲▲▲ WiFi 100%</span>
+    </div>
+    <div class="cover-hero">
+      <div class="logo-row">
+        <svg width="38" height="38" aria-label="REVIA icon">
+          <circle cx="19" cy="19" r="18" fill="rgba(255,255,255,0.12)" stroke="rgba(255,255,255,0.35)" stroke-width="1.5"></circle>
+          <path d="M19 6 C28 6 32 14 30 21" fill="none" stroke="rgba(255,255,255,0.45)" stroke-width="2" stroke-linecap="round"></path>
+          <path d="M30 21 C28 29 20 34 12 30" fill="none" stroke="rgba(255,255,255,0.65)" stroke-width="2" stroke-linecap="round"></path>
+          <path d="M12 30 C4 24 6 14 12 9" fill="none" stroke="rgba(255,255,255,0.85)" stroke-width="2" stroke-linecap="round"></path>
+          <polygon points="8,5 14,10 6,14" fill="white" opacity="0.85"></polygon>
+          <ellipse cx="19" cy="17" rx="5" ry="8" fill="rgba(255,255,255,0.18)" transform="rotate(-25 19 17)"></ellipse>
+          <ellipse cx="19" cy="17" rx="5" ry="8" fill="none" stroke="rgba(255,255,255,0.55)" stroke-width="1.2" transform="rotate(-25 19 17)"></ellipse>
+        </svg>
+        <div>
+          <div class="logo-wordmark">REVIA</div>
+          <div class="logo-tagline">"Ubah Limbah Jadi Nilai"</div>
+        </div>
+      </div>
+      <div class="cover-eyebrow">How It Works · Decision Engine</div>
+      <div class="cover-title">Decision Engine<br /><span>REVIA</span></div>
+      <div class="cover-sub">Mesin kecerdasan yang menghubungkan sumber daya terbuang dengan penerima terbaik — otomatis, real-time, terukur dampaknya.</div>
+      <div class="cover-badges">
+        <div class="cover-badge">7 Tahap Proses</div>
+        <div class="cover-badge">AI-Powered Matching</div>
+        <div class="cover-badge">Circular Economy</div>
+      </div>
+    </div>
+    <div class="body">
+      <div class="sec-hdr" style="padding-bottom:0">
+        <span class="sec-title">Alur Kerja 7 Tahap</span>
+        <span style="font-size:10px;font-weight:700;color:var(--secondary)">Lihat Detail →</span>
+      </div>
+      <div class="flow-section">
+        <div class="flow-header">
+          <span class="flow-header-title">Decision Engine Pipeline</span>
+          <span class="flow-header-badge">Real-time</span>
+        </div>
+        <div class="stage-grid">
+          <div class="stage-row">
+            <div class="stage-num sn-1">1</div>
+            <div class="stage-icon-wrap si-1">♻️</div>
+            <div class="stage-info">
+              <div class="stage-name">Registrasi Supply</div>
+              <div class="stage-desc">Upload foto, jenis, berat, lokasi GPS resource</div>
+            </div>
+            <div class="stage-arrow">→</div>
+          </div>
+          <div class="stage-row">
+            <div class="stage-num sn-2">2</div>
+            <div class="stage-icon-wrap si-2">🔍</div>
+            <div class="stage-info">
+              <div class="stage-name">Analisis Material</div>
+              <div class="stage-desc">Klasifikasi jenis, kualitas, dan nilai potensial</div>
+            </div>
+            <div class="stage-arrow">→</div>
+          </div>
+          <div class="stage-row">
+            <div class="stage-num sn-3">3</div>
+            <div class="stage-icon-wrap si-3">🧠</div>
+            <div class="stage-info">
+              <div class="stage-name">Hitung Recovery Score</div>
+              <div class="stage-desc">Skor 0–100: material · lokasi · mitra · CO₂</div>
+            </div>
+            <div class="stage-arrow">→</div>
+          </div>
+          <div class="stage-row">
+            <div class="stage-num sn-4">4</div>
+            <div class="stage-icon-wrap si-4">🎯</div>
+            <div class="stage-info">
+              <div class="stage-name">Pencocokan Mitra</div>
+              <div class="stage-desc">3 jalur terbaik: Bank Sampah, Pengolah, Komunitas</div>
+            </div>
+            <div class="stage-arrow">→</div>
+          </div>
+          <div class="stage-row">
+            <div class="stage-num sn-5">5</div>
+            <div class="stage-icon-wrap si-5">🚚</div>
+            <div class="stage-info">
+              <div class="stage-name">Penjemputan Aktif</div>
+              <div class="stage-desc">Jadwal, tracking real-time, ETA pengemudi</div>
+            </div>
+            <div class="stage-arrow">→</div>
+          </div>
+          <div class="stage-row">
+            <div class="stage-num sn-6">6</div>
+            <div class="stage-icon-wrap si-6">⚙️</div>
+            <div class="stage-info">
+              <div class="stage-name">Transformasi Resource</div>
+              <div class="stage-desc">Maggot BSF, daur ulang, kompos, dll.</div>
+            </div>
+            <div class="stage-arrow">→</div>
+          </div>
+          <div class="stage-row">
+            <div class="stage-num sn-7">7</div>
+            <div class="stage-icon-wrap si-7">🌱</div>
+            <div class="stage-info">
+              <div class="stage-name">Nilai &amp; Dampak Tercatat</div>
+              <div class="stage-desc">Nilai ekonomi, CO₂ dihindari, Circularity Score</div>
+            </div>
+            <div class="stage-arrow">→</div>
+          </div>
+        </div>
+      </div>
+      <div class="mini-stats">
+        <div class="mstat"><div class="mstat-val">91</div><div class="mstat-label">Maks. Score</div></div>
+        <div class="mstat"><div class="mstat-val">&lt;3s</div><div class="mstat-label">Waktu Match</div></div>
+        <div class="mstat"><div class="mstat-val">47+</div><div class="mstat-label">Jalur Aktif</div></div>
+      </div>
+      <div class="gap-lg"></div>
+    </div>
+    <div class="nav">
+      <div class="ni"><div class="ni-icon">🏠</div><div class="ni-lbl">Beranda</div></div>
+      <div class="ni"><div class="ni-icon">🔍</div><div class="ni-lbl">Temukan</div></div>
+      <div class="ni active"><div class="ni-icon">⚡</div><div class="ni-lbl">Engine</div><div class="ni-dot"></div></div>
+      <div class="ni"><div class="ni-icon">💬</div><div class="ni-lbl">Pesan</div></div>
+      <div class="ni"><div class="ni-icon">👤</div><div class="ni-lbl">Profil</div></div>
+    </div>
+  </div>
+</div>
+
+
+
+<div class="phone-wrap">
+  <div class="screen-label">DE–02 — Resource Owner: Supply Side</div>
+  <div class="phone">
+    <div class="status on-dark" style="padding-top:18px">
+      <span>9:41</span>
+      <span style="font-size:10px;color:rgba(255,255,255,0.75)">▲▲▲ WiFi 100%</span>
+    </div>
+    <div class="topbar" style="background:var(--primary);border-bottom-color:rgba(255,255,255,0.12)">
+      <div class="topbar-back" style="color:rgba(255,255,255,0.65)">← Kembali</div>
+      <div class="topbar-title" style="color:#fff">Sisi Supply</div>
+      <div class="topbar-action">Tahap 1</div>
+    </div>
+    <div class="supply-hero">
+      <div class="sh-eyebrow">Decision Engine · Supply Side</div>
+      <div class="sh-title">Siapa Resource<br />Owner?</div>
+      <div class="sh-sub">Setiap aktor ini dapat mendaftarkan resource terbuang mereka ke Decision Engine REVIA untuk diubah menjadi nilai.</div>
+      <div class="sh-pill-row">
+        <div class="sh-pill">6 Kategori</div>
+        <div class="sh-pill accent">★ 1.247 Owner Aktif</div>
+        <div class="sh-pill">Terverifikasi</div>
+      </div>
+    </div>
+    <div class="supply-stats">
+      <div class="supstat-item"><div class="supstat-val">8.4 t</div><div class="supstat-label">Tersalurkan</div></div>
+      <div class="supstat-item"><div class="supstat-val">3.2 t</div><div class="supstat-label">CO₂ Hemat</div></div>
+      <div class="supstat-item"><div class="supstat-val">Rp18jt</div><div class="supstat-label">Nilai Total</div></div>
+      <div class="supstat-item"><div class="supstat-val">47</div><div class="supstat-label">Matches</div></div>
+    </div>
+    <div class="body">
+      <div class="sec-hdr">
+        <span class="sec-title">Kategori Sumber Resource</span>
+      </div>
+      <div class="owner-grid">
+        <div class="owner-card featured">
+          <div class="oc-icon-wrap oci-household">🏠</div>
+          <div class="oc-name">Rumah<br />Tangga</div>
+          <div class="oc-count">+412 owner</div>
+          <div class="oc-badge">Terbanyak</div>
+        </div>
+        <div class="owner-card">
+          <div class="oc-icon-wrap oci-umkm">🏪</div>
+          <div class="oc-name">UMKM &amp;<br />Toko</div>
+          <div class="oc-count">+286 owner</div>
+          <div class="oc-badge">Aktif</div>
+        </div>
+        <div class="owner-card">
+          <div class="oc-icon-wrap oci-pasar">🛒</div>
+          <div class="oc-name">Pasar<br />Tradisional</div>
+          <div class="oc-count">+104 owner</div>
+          <div class="oc-badge">Aktif</div>
+        </div>
+        <div class="owner-card">
+          <div class="oc-icon-wrap oci-resto">🍽️</div>
+          <div class="oc-name">Restoran &amp;<br />Warung</div>
+          <div class="oc-count">+197 owner</div>
+          <div class="oc-badge">Aktif</div>
+        </div>
+        <div class="owner-card">
+          <div class="oc-icon-wrap oci-sekolah">🏫</div>
+          <div class="oc-name">Sekolah &amp;<br />Kampus</div>
+          <div class="oc-count">+83 owner</div>
+          <div class="oc-badge">Aktif</div>
+        </div>
+        <div class="owner-card">
+          <div class="oc-icon-wrap oci-petani">🌾</div>
+          <div class="oc-name">Petani &amp;<br />Kebun</div>
+          <div class="oc-count">+165 owner</div>
+          <div class="oc-badge">Aktif</div>
+        </div>
+      </div>
+      <div class="flow-connector">
+        <div class="fc-label">↓ Semua menuju Decision Engine</div>
+        <div class="fc-chain">
+          <div class="fcc-node"><div class="fcc-icon-wrap" style="background:var(--success-lt)">🏠</div><div class="fcc-name">Supply</div></div>
+          <div class="fcc-arrow">→</div>
+          <div class="fcc-node"><div class="fcc-icon-wrap" style="background:#E3EAF8">📲</div><div class="fcc-name">Upload</div></div>
+          <div class="fcc-arrow">→</div>
+          <div class="fcc-node"><div class="fcc-icon-wrap" style="background:var(--accent-lt)">🧠</div><div class="fcc-name">Engine</div></div>
+          <div class="fcc-arrow">→</div>
+          <div class="fcc-node"><div class="fcc-icon-wrap" style="background:#D8E8F5">🎯</div><div class="fcc-name">Match</div></div>
+          <div class="fcc-arrow">→</div>
+          <div class="fcc-node"><div class="fcc-icon-wrap" style="background:var(--success-lt)">🌱</div><div class="fcc-name">Nilai</div></div>
+        </div>
+      </div>
+      <div class="gap"></div>
+      <div class="btn-primary-full">Daftar Sebagai Resource Owner →</div>
+      <div class="btn-secondary-full">Lihat Mitra Penerima</div>
+    </div>
+    <div class="nav">
+      <div class="ni"><div class="ni-icon">🏠</div><div class="ni-lbl">Beranda</div></div>
+      <div class="ni"><div class="ni-icon">🔍</div><div class="ni-lbl">Temukan</div></div>
+      <div class="ni active"><div class="ni-icon">⚡</div><div class="ni-lbl">Engine</div><div class="ni-dot"></div></div>
+      <div class="ni"><div class="ni-icon">💬</div><div class="ni-lbl">Pesan</div></div>
+      <div class="ni"><div class="ni-icon">👤</div><div class="ni-lbl">Profil</div></div>
+    </div>
+  </div>
+</div>
+
+
+
+<div class="phone-wrap">
+  <div class="screen-label">DE–03 — Supply Registration: Data Upload</div>
+  <div class="phone">
+    <div class="status on-dark" style="padding-top:18px">
+      <span>9:41</span>
+      <span style="font-size:10px;color:rgba(255,255,255,0.75)">▲▲▲ WiFi 100%</span>
+    </div>
+    <div class="reg-hero">
+      <div class="rh-eyebrow">Tahap 1 / 7 · Decision Engine</div>
+      <div class="rh-title">Registrasi Supply</div>
+      <div class="rh-sub">Data resource berhasil diunggah ke Decision Engine</div>
+      <div class="rh-steps">
+        <div class="rhs-item"><div class="rhs-circle done">✓</div><div class="rhs-label">Foto</div></div>
+        <div class="rhs-divider done"></div>
+        <div class="rhs-item"><div class="rhs-circle done">✓</div><div class="rhs-label">Jenis</div></div>
+        <div class="rhs-divider done"></div>
+        <div class="rhs-item"><div class="rhs-circle active">3</div><div class="rhs-label active">Lokasi</div></div>
+        <div class="rhs-divider"></div>
+        <div class="rhs-item"><div class="rhs-circle todo">4</div><div class="rhs-label">Konfirm.</div></div>
+      </div>
+    </div>
+    <div class="body">
+      <div class="photo-card">
+        <div class="photo-preview">
+          <div style="font-size:52px;opacity:0.8">🥬</div>
+          <div style="font-size:12px;font-weight:700;color:rgba(255,255,255,0.85)">Sisa Sayur Organik</div>
+          <div class="photo-verified-badge">✓ Terverifikasi</div>
+          <div class="photo-id-badge">ID #REV-2025-03-4821</div>
+        </div>
+        <div class="photo-card-body">
+          <div class="pcb-resource-name">Sisa Sayur Pasar</div>
+          <div class="pcb-owner-row">
+            <div class="pcb-avatar">🏪</div>
+            <span class="pcb-owner-name">Toko Maju Jaya · Sleman, DIY</span>
+            <span class="pcb-verified">★ Terverifikasi</span>
+          </div>
+          <div style="display:flex;gap:6px;margin-top:8px;flex-wrap:wrap">
+            <span class="chip chip-green">Organik</span>
+            <span class="chip chip-gold">Prioritas Tinggi</span>
+            <span class="chip chip-muted">Q1 2025</span>
+          </div>
+        </div>
+      </div>
+      <div class="data-card">
+        <div class="data-card-header">
+          <span>Data Resource</span>
+          <span style="color:var(--success);font-size:10px">● Data Lengkap</span>
+        </div>
+        <div class="data-row">
+          <div class="dr-icon-wrap dri-type">♻️</div>
+          <div class="dr-body">
+            <div class="dr-label">Jenis Resource</div>
+            <div class="dr-value green">Sisa Sayur Organik</div>
+          </div>
+          <span class="chip chip-green">Organik</span>
+        </div>
+        <div class="data-row">
+          <div class="dr-icon-wrap dri-weight">⚖️</div>
+          <div class="dr-body">
+            <div class="dr-label">Berat Estimasi</div>
+            <div class="dr-value">8.5 kg</div>
+          </div>
+          <div class="dr-suffix">±0.3 kg</div>
+        </div>
+        <div class="gps-row-visual">
+          <div class="gps-map-thumb">
+            <svg width="56" height="40">
+              <rect width="56" height="40" fill="#C8E6C9"></rect>
+              <rect x="0" y="14" width="56" height="4" fill="#A5D6A7" opacity="0.7"></rect>
+              <rect x="20" y="0" width="4" height="40" fill="#A5D6A7" opacity="0.7"></rect>
+              <circle cx="28" cy="20" r="7" fill="#40916C" opacity="0.9"></circle>
+              <circle cx="28" cy="20" r="3" fill="white"></circle>
+              <circle cx="28" cy="20" r="11" fill="none" stroke="#40916C" stroke-width="1.5" opacity="0.4"></circle>
+            </svg>
+          </div>
+          <div class="gps-coords">
+            <div class="gps-coord-line">-7.7956°S, 110.3695°E</div>
+            <div class="gps-coord-acc">● Akurasi GPS: ±4m · Sleman, DIY</div>
+          </div>
+          <div class="gps-copy-btn">Salin</div>
+        </div>
+        <div class="data-row" style="flex-direction:column;align-items:flex-start;gap:8px">
+          <div style="display:flex;align-items:center;gap:10px;width:100%">
+            <div class="dr-icon-wrap dri-cond">🔎</div>
+            <div class="dr-body">
+              <div class="dr-label">Kondisi Material</div>
+              <div class="dr-value gold">Bersih · Layak Proses</div>
+            </div>
+          </div>
+          <div class="cond-chips" style="padding:0">
+            <span class="cond-chip active">Segar</span>
+            <span class="cond-chip green">Bersih ✓</span>
+            <span class="cond-chip">Basah</span>
+            <span class="cond-chip">Bebas Plastik</span>
+          </div>
+        </div>
+        <div class="data-row">
+          <div class="dr-icon-wrap dri-time">🕐</div>
+          <div class="dr-body">
+            <div class="dr-label">Waktu Tersedia</div>
+            <div class="dr-value">Hari ini · 14:00–17:00 WIB</div>
+          </div>
+          <span class="chip chip-green">Segera</span>
+        </div>
+      </div>
+      <div class="submit-banner">
+        <div class="sb-icon">🧠</div>
+        <div>
+          <div class="sb-title">Siap Dianalisis Decision Engine</div>
+          <div class="sb-desc">Data lengkap · Engine akan menghitung Recovery Score dan menemukan jalur terbaik dalam &lt;3 detik.</div>
+        </div>
+      </div>
+      <div class="btn-primary-full">Kirim ke Decision Engine ⚡</div>
+      <div class="btn-secondary-full">Ubah Data</div>
+    </div>
+    <div class="nav">
+      <div class="ni"><div class="ni-icon">🏠</div><div class="ni-lbl">Beranda</div></div>
+      <div class="ni"><div class="ni-icon">🔍</div><div class="ni-lbl">Temukan</div></div>
+      <div class="ni active"><div class="ni-icon">⚡</div><div class="ni-lbl">Engine</div><div class="ni-dot"></div></div>
+      <div class="ni"><div class="ni-icon">💬</div><div class="ni-lbl">Pesan</div></div>
+      <div class="ni"><div class="ni-icon">👤</div><div class="ni-lbl">Profil</div></div>
+    </div>
+  </div>
+</div>
+
+<footer>REVIA — Decision Engine: How It Works · 3 Screens · Made with IBM Bob</footer>
+</body>
+</html>
